@@ -13,7 +13,7 @@ import speech_recognition as sr
 from googletrans import Translator
 from colorama import init, Fore, Style
 
-from gemini import Gemini
+from llm.gemini import Gemini
 from asr import Transcribe
 
 # colorama
@@ -29,16 +29,24 @@ class TTS(QObject):
         self.engine = pyttsx3.Engine()
 
     def run(self):
-        self.tts_google()
+        self.tts_pyttsx3()
 
     def tts_pyttsx3(self):
         try:
             # self.engine.say(self.text)
-            self.engine.save_to_file(self.text, "temp.wav")
+            self.engine.save_to_file(self.text, "response.wav")
             self.engine.runAndWait()
         except Exception as e:
             print(f"Error on TTS: {e}")
         finally:
+            audio_duration = AudioSegment.from_file("response.wav").duration_seconds
+            if os.path.exists("response.wav"):
+                self.merge_video_audio(
+                    "./vids/extended_vid.mp4",
+                    "response.wav",
+                    "output.mp4",
+                    audio_duration,
+                )
             self.process_complete.emit()
 
     def tts_google(self):
@@ -53,13 +61,24 @@ class TTS(QObject):
             self.merge_video_audio(
                 "./vids/extended_vid.mp4", "response.wav", "output.mp4", audio_duration
             )
-            print("Done merger")
             self.process_complete.emit()
         # os.system("ffplay response.mp3")
         return
 
     def merge_video_audio(self, video_input, audio_input, output_file, duration):
-        options = ["-map", "0:v", "-map", "1:a", "-c:v", "copy", "-shortest", "-y"]
+        options = [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            # "-shortest",
+            "-y",
+        ]
         ff = ffmpy.FFmpeg(
             inputs={video_input: None, audio_input: None},
             outputs={output_file: options},
@@ -81,9 +100,9 @@ class AudioListener:
         instruction = ""
         try:
             with sr.Microphone() as src:
-                print("LISTENING ...")
+                print("Listening ...")
                 self.speech = self.listener.listen(src)
-                print("Instruction received ...")
+                print("Processing Prompt ...")
                 instruction += self.listener.recognize_google(self.speech)
                 instruction = instruction.lower()
         except Exception as e:
