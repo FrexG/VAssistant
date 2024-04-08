@@ -15,7 +15,8 @@ from PyQt5.QtMultimediaWidgets import QVideoWidget
 from colorama import init, Fore, Style
 from pydantic_core import Url
 
-from gemini import Gemini
+from llm.gemini import Gemini
+from llm.gemini_langchain import LangchainChat
 from listener import AudioListener, TTS
 
 
@@ -36,35 +37,23 @@ class AvatarWidget(QWidget):
         # mute audio
         self.media_player.setMuted(False)
         # Set up a video file
-
-        self.media_player.stateChanged.connect(self.loop_video)
-        # self.widget = QWidget()
-        # self.widget.setLayout(self.layout)
-        # self.setCentralWidget(self.widget)
+        # self.media_player.stateChanged.connect(self.loop_video)
         self.setLayout(self.layout)
         self.show()
 
     def play_video(self):
+        if self.media_player.state() == QMediaPlayer.PlayingState:
+            # stop currently playing video
+            self.stop_video()
+
         self.media_content = QMediaContent(QUrl.fromLocalFile("output.mp4"))
         self.media_player.setMedia(self.media_content)
 
-        if self.media_player.state() == QMediaPlayer.PlayingState:
-            self.pause_video()
-        else:
-            self.media_player.play()
+        self.media_player.play()
 
-    def loop_video(self):
-        self.loop_count += 1
-        if self.loop_count == 2:
-            self.pause_video()
-
-        if self.media_player.state() == QMediaPlayer.MediaStatus.EndOfMedia:
-            # Restart playback
-            self.media_player.setPosition(0)  # Set position to beginning
-            self.media_player.play()
-
-    def pause_video(self):
-        self.media_player.pause()
+    def stop_video(self):
+        self.media_player.stop()
+        self.media_player.setMedia(QMediaContent())
 
 
 class VirtualAssistantApp(QMainWindow):
@@ -94,16 +83,20 @@ class VirtualAssistantApp(QMainWindow):
         self.listener = AudioListener()
 
     def init_gemini(self):
-        self.gemini = Gemini()
+        self.gemini = LangchainChat()  # Gemini()
 
     def listen_action(self):
         self.talk_btn.setEnabled(False)
+
         prompt = self.listener.listen_prompt()
 
-        if not any(
-            keyword in prompt.strip("") for keyword in ["hello", "hi", "good morning"]
-        ):
-            prompt += " limit answer to less than 200 words"
+        if any(keyword == prompt for keyword in ["stop", "enough"]):
+            # Kill the thread response thread
+            if self.tts_thread:
+                self.stop_tts_thread()
+                self.avatar_widget.stop_video()
+                self.talk_btn.setEnabled(True)
+                return
 
         if prompt:
             gemini_response = self.gemini.get_response(prompt).replace("*", "")
